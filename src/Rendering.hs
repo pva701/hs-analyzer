@@ -1,13 +1,15 @@
 module Rendering
-    ( highlight
+    ( highlightCode
     , renderInspection
     , renderSourceCode
+    , renderParserFail
     ) where
 
 import           Universum
 
 import           Data.List                                 ((!!))
-import           Language.Haskell.Exts.SrcLoc              (SrcSpan (..),
+import           Language.Haskell.Exts.SrcLoc              (SrcLoc (..),
+                                                            SrcSpan (..),
                                                             SrcSpanInfo (..))
 import           Language.Haskell.HsColour
 import qualified Language.Haskell.HsColour.ANSI            as HsCol
@@ -16,8 +18,8 @@ import           Language.Haskell.HsColour.Colourise       (defaultColourPrefs)
 import           Language.Haskell.HsColour.Output          (TerminalType (..))
 import           System.Console.ANSI                       as ANSI
 
-highlight :: Bool -> String -> String
-highlight usingBackg
+highlightCode :: Bool -> String -> String
+highlightCode usingBackg
     | usingBackg = HsCol.highlight [HsCol.Background HsCol.Magenta]
     | otherwise = hscolour'
   where
@@ -25,7 +27,7 @@ highlight usingBackg
 
 renderLine :: String -> Int -> Int -> IO ()
 renderLine line fr to =
-    putStrLn $ take fr line ++ (highlight True $ take (to - fr) $ drop fr line) ++ drop to line
+    putStrLn $ take fr line ++ (highlightCode True $ take (to - fr) $ drop fr line) ++ drop to line
 
 renderSourceCode :: Int -> [String] -> SrcSpan -> IO ()
 renderSourceCode indent lines (SrcSpan file r c r1 c1)
@@ -43,3 +45,13 @@ renderInspection inspectionName line = do
     putStr $ "\"" ++ inspectionName ++ "\" inspection"
     setSGR [Reset]
     putStrLn $ ", line: " ++ show line
+
+renderParserFail :: [String] -> SrcLoc -> String -> IO ()
+renderParserFail lines SrcLoc{..} reason = do
+    putStrLn $ hiRed "Parsing of file " ++
+               srcFilename ++
+               hiRed " failed." ++
+               "(line: " ++ show srcLine ++ ", col: " ++ show srcColumn ++ ").\n" ++
+               hiRed "Reason: " ++ reason ++ "\n"
+  where
+    hiRed = HsCol.highlight [HsCol.Foreground HsCol.Red]

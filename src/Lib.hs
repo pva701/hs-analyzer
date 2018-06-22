@@ -2,11 +2,12 @@ module Lib
     ( hsAnalize
     ) where
 
-import Universum
+import Universum hiding (Type)
 
 import System.Environment
 import Language.Haskell.Exts
 import Data.Generics.Schemes (everything)
+import Language.Haskell.Exts.Extension
 import Data.Generics.Aliases (mkQ)
 import Data.String.Utils
 
@@ -15,10 +16,17 @@ import Rendering
 type Decl' = Decl SrcSpanInfo
 type Exp' = Exp SrcSpanInfo
 
+enabledExtensions :: [Extension] -> [Extension]
+enabledExtensions [] = []
+enabledExtensions (e@(EnableExtension _) : xs) = e : enabledExtensions xs
+enabledExtensions (e : xs) = enabledExtensions xs
+
 hsAnalize :: FilePath -> IO ()
 hsAnalize file = do
+    -- putStrLn $ "file: " ++ file
     lines <- map toString . lines <$> readFile file
-    parseFile file >>= \case
+    let parseMode = defaultParseMode { fixities = Just [], extensions = enabledExtensions knownExtensions}
+    parseFileWithMode parseMode file >>= \case
       ParseOk mod -> case mod of
           Module _ _ _ _ decls -> do
               let newtypeDetections = map ("newtype" :: String, ) $ catMaybes $ map detectDataLikeNewtype decls
@@ -27,9 +35,9 @@ hsAnalize file = do
                   renderInspection insp (srcSpanStartLine $ srcInfoSpan span)
                   renderSourceCode 4 lines (srcInfoSpan span)
                   putStrLn ("  may be replaced with" :: String)
-                  putStrLn $ highlight False $ "    " <> replace "\n" "\n    " nw <> "\n"
+                  putStrLn $ highlightCode False $ "    " <> replace "\n" "\n    " nw <> "\n"
           _ -> putText "Not supported yet"
-      ParseFailed srcLoc reason -> putText $ "Parsing failed, reason: " <> show reason
+      ParseFailed srcLoc reason -> renderParserFail lines srcLoc reason
 
 data Detection = Detection
     { oldSpan    :: SrcSpanInfo
@@ -41,13 +49,19 @@ data Detection = Detection
 -- If so suggest replacing with "newtype": return span of code and suggestion of new code
 detectDataLikeNewtype :: Decl' -> Maybe Detection
 detectDataLikeNewtype dt@(DataDecl loc (DataType l0) b c qc@[QualConDecl _ Nothing Nothing constr] e)
-    | checkOneField constr = Just $ Detection loc $ prettyPrint $ DataDecl loc (NewType l0) b c qc e
+    | checkOneFieldNoBang constr =
+        Just $ Detection loc $ prettyPrint $ DataDecl loc (NewType l0) b c qc e
     | otherwise            = Nothing
   where
-    checkOneField :: ConDecl SrcSpanInfo -> Bool
-    checkOneField (ConDecl _ _ [_]) = True
-    checkOneField (RecDecl _ _ [_]) = True
-    checkOneField                 _ = False
+    checkOneFieldNoBang :: ConDecl SrcSpanInfo -> Bool
+    checkOneFieldNoBang (ConDecl _ _ [fieldType]) = checkNoBang fieldType
+    checkOneFieldNoBang (RecDecl _ _ [FieldDecl _ _ fieldType]) = checkNoBang fieldType
+    checkOneFieldNoBang                 _ = False
+
+    checkNoBang :: Type SrcSpanInfo -> Bool
+    checkNoBang (TyBang _ _ _ _) = False
+    checkNoBang _ = True
+
 detectDataLikeNewtype _ = Nothing
 
 -- Detect map f . map g

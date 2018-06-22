@@ -1,4 +1,4 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
 module Main where
 
@@ -11,5 +11,5 @@ import           Lib
 
 main :: IO ()
 main = do
-    [file] <- getArgs
-    hsAnalize file
+    files <- getArgs
+    mapM_ hsAnalize files
