@@ -17,19 +17,22 @@ hsAnalize file = parseFile file >>= \case
     ParseOk mod -> case mod of
         Module _ _ _ _ decls -> do
             -- mapM_ (\x -> putText $ show (prettyPrint x) <> "\n\n") decls
-            -- mapM_ (\x -> putText $ show (const () <$> x) <> "\n\n") decls
-            -- mapM_ (putText . show . isJust . detectDataLikeNewtype) decls
-            mapM_ (putText . (<> "\n\n") . show . prettyPrint) (concatMap detectMapFMapG decls)
+            mapM_ (\x -> putText $ show (const () <$> x) <> "\n\n") decls
+            forM_ decls $ \dc -> case detectDataLikeNewtype dc of
+                Just (old, nw)    -> putText $ "Old: " <> show (prettyPrint old) <> "\nNew: " <> show (prettyPrint nw) <> "\n\n"
+                Nothing -> pure ()
+            -- mapM_ (putText . (<> "\n\n") . show . isJust . detectDataLikeNewtype) decls
+            -- mapM_ (putText . (<> "\n\n") . show . prettyPrint) (concatMap detectMapFMapG decls)
         _                  -> putText "Not supported yet"
-    ParseFailed srcLoc reason -> putText "Parsing failed"
+    ParseFailed srcLoc reason -> putText $ "Parsing failed, reason: " <> show reason
 
 
 -- Detect "data" which doesn't have bind type variables and contexts,
 -- hovewer, with single constructor with single field.
 -- If so suggest replacing with "newtype".
-detectDataLikeNewtype :: Decl' -> Maybe (SrcSpanInfo, String)
-detectDataLikeNewtype (DataDecl dataLoc (DataType _) _ (DHead _ (Ident _ nm)) [QualConDecl _ Nothing Nothing constr] _)
-    | checkOneField constr = Just (dataLoc, nm)
+detectDataLikeNewtype :: Decl' -> Maybe (Decl', Decl')
+detectDataLikeNewtype dt@(DataDecl a (DataType l0) b c qc@[QualConDecl _ Nothing Nothing constr] e)
+    | checkOneField constr = Just (dt, DataDecl a (NewType l0) b c qc e)
     | otherwise            = Nothing
   where
     checkOneField :: ConDecl SrcSpanInfo -> Bool
@@ -45,8 +48,8 @@ detectMapFMapG = everything (++) ([] `mkQ` mapFMapG)
     mapFMapG :: Exp' -> [Exp']
     mapFMapG e@(InfixApp _ e1 (QVarOp _ (UnQual _ (Symbol _ "."))) e2) -- detecting "map f . map g"
         | mapApp (skipParens e1) && mapApp (skipParens e2) = [e]
-    mapFMapG e@(App _ e1 e2)
-        | mapApp (skipParens e1) && mapApp2Args (skipParens e2) = [e]  -- detecting "map f (map g xs)"
+    mapFMapG e@(App _ e1 e2)                                           -- detecting "map f (map g xs)"
+        | mapApp (skipParens e1) && mapApp2Args (skipParens e2) = [e]
     mapFMapG e@(InfixApp _ e1 (QVarOp _ (UnQual _ (Symbol _ "$"))) e2) -- detecting "map f $ map g xs"
         | mapApp (skipParens e1) && mapApp2Args (skipParens e2) = [e]
     mapFMapG _ = []
