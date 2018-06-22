@@ -6,23 +6,28 @@ import Universum
 
 import System.Environment
 import Language.Haskell.Exts
+import Data.Generics.Schemes (everything)
+import Data.Generics.Aliases (mkQ)
+
+type Decl' = Decl SrcSpanInfo
+type Exp' = Exp SrcSpanInfo
 
 hsAnalize :: FilePath -> IO ()
 hsAnalize file = parseFile file >>= \case
     ParseOk mod -> case mod of
         Module _ _ _ _ decls -> do
             -- mapM_ (\x -> putText $ show (prettyPrint x) <> "\n\n") decls
-            mapM_ (\x -> putText $ show (const () <$> x) <> "\n\n") decls
-            mapM_ (putText . show . isJust . detectDataLikeNewtype) decls
+            -- mapM_ (\x -> putText $ show (const () <$> x) <> "\n\n") decls
+            -- mapM_ (putText . show . isJust . detectDataLikeNewtype) decls
+            mapM_ (putText . (<> "\n\n") . show . prettyPrint) (concatMap detectMapFMapG decls)
         _                  -> putText "Not supported yet"
     ParseFailed srcLoc reason -> putText "Parsing failed"
 
--- QName
 
 -- Detect "data" which doesn't have bind type variables and contexts,
 -- hovewer, with single constructor with single field.
--- If so suggest replacing with "newtype"
-detectDataLikeNewtype :: Decl SrcSpanInfo -> Maybe (SrcSpanInfo, String)
+-- If so suggest replacing with "newtype".
+detectDataLikeNewtype :: Decl' -> Maybe (SrcSpanInfo, String)
 detectDataLikeNewtype (DataDecl dataLoc (DataType _) _ (DHead _ (Ident _ nm)) [QualConDecl _ Nothing Nothing constr] _)
     | checkOneField constr = Just (dataLoc, nm)
     | otherwise            = Nothing
@@ -33,15 +38,32 @@ detectDataLikeNewtype (DataDecl dataLoc (DataType _) _ (DHead _ (Ident _ nm)) [Q
     checkOneField                 _ = False
 detectDataLikeNewtype _ = Nothing
 
--- newtype A = forall x . A x
--- newtype B x =  Ord x => B x
--- newtype D x =  x ~ Int => D x
--- newtype X = Yep {lol :: Int}
+-- Detect map f . map g
+detectMapFMapG :: Decl' -> [Exp']
+detectMapFMapG = everything (++) ([] `mkQ` mapFMapG)
+  where
+    mapFMapG :: Exp' -> [Exp']
+    mapFMapG e@(InfixApp _ e1 (QVarOp _ (UnQual _ (Symbol _ "."))) e2) -- detecting "map f . map g"
+        | mapApp (skipParens e1) && mapApp (skipParens e2) = [e]
+    mapFMapG e@(App _ e1 e2)
+        | mapApp (skipParens e1) && mapApp2Args (skipParens e2) = [e]  -- detecting "map f (map g xs)"
+    mapFMapG e@(InfixApp _ e1 (QVarOp _ (UnQual _ (Symbol _ "$"))) e2) -- detecting "map f $ map g xs"
+        | mapApp (skipParens e1) && mapApp2Args (skipParens e2) = [e]
+    mapFMapG _ = []
 
--- data A1 = forall x . A1 x
--- data B1 x = Ord x => B1 x
--- data C1 x = Ord x => C1 x | C2
--- data D x =  x ~ Int => D x
+    mapApp :: Exp' -> Bool
+    mapApp (App _ e1 _) = mapOrfmap (skipParens e1)
+    mapApp _ = False
 
--- r :: C1 A1
--- r = C2 -- C1 (A1 3)
+    mapApp2Args :: Exp' -> Bool
+    mapApp2Args (App _ e1 _) = mapApp (skipParens e1)
+    mapApp2Args _ = False
+
+    mapOrfmap :: Exp' -> Bool
+    mapOrfmap (Var _ (UnQual _ (Ident _ "map"))) = True
+    mapOrfmap (Var _ (UnQual _ (Ident _ "fmap"))) = True
+    mapOrfmap _ = False
+
+    skipParens :: Exp' -> Exp'
+    skipParens (Paren _ e) = skipParens e
+    skipParens e = e

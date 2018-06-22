@@ -1,8 +1,10 @@
+{-# LANGUAGE Rank2Types #-}
+
 module Main where
 
-import Universum
+import           Universum
 
-import Lib
+import           Lib
 
 -- 1. data A = A Int -- replace with newtype
 -- 2  map f . map g -- replace with map (f . g)

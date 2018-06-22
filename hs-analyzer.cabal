@@ -30,6 +30,7 @@ library
       src
   build-depends:
       base >=4.7 && <5
+    , syb
     , universum
   exposed-modules:
       Lib
