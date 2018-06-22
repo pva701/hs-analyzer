@@ -10,4 +10,6 @@ import           Lib
 -- 2  map f . map g -- replace with map (f . g)
 
 main :: IO ()
-main = hsAnalize "lol.hs"
+main = do
+    [file] <- getArgs
+    hsAnalize file

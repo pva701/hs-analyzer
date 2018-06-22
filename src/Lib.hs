@@ -82,10 +82,12 @@ detectMapFMapG = everything (++) ([] `mkQ` mapFMapG)
 
     mapApp :: Exp' -> Maybe (String, Exp')
     mapApp (App _ e1 e2) = (,) <$> mapOrfmap (skipParens e1) <*> Just (skipParens e2)
+    mapApp (InfixApp _ e1 (QVarOp _ (UnQual _ (Symbol _ "$"))) e2) = (,) <$> mapOrfmap (skipParens e1) <*> Just (skipParens e2)
     mapApp _ = Nothing
 
     mapApp2Args :: Exp' -> Maybe ((String, Exp'), Exp')
-    mapApp2Args (App _ e1 e2) = (,) <$> mapApp (skipParens e1) <*> (snd <$> mapApp (skipParens e2))
+    mapApp2Args (App _ e1 e2) = (,) <$> mapApp (skipParens e1) <*> Just (skipParens e2)
+    mapApp2Args (InfixApp _ e1 (QVarOp _ (UnQual _ (Symbol _ "$"))) e2) = (,) <$> mapApp (skipParens e1) <*> Just (skipParens e2)
     mapApp2Args _ = Nothing
 
     mapOrfmap :: Exp' -> Maybe String
